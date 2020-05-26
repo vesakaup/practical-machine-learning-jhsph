@@ -1,0 +1,125 @@
+---
+title: "Predicting the execution manner of dumbell exercise "
+author: "Vesa Kauppinen"
+date: "26 May 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r, echo=FALSE, message = FALSE}
+library(caret)
+library(corrplot)
+library(tidyverse)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+
+
+fileUrlTrain = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileUrlTest = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+fileNameTrain = "train.csv"
+fileNameTest = "test.csv"
+
+
+if(!file.exists(fileNameTrain)){
+download.file(fileUrlTrain, fileNameTrain, mode = "wb")    
+}
+if(!file.exists(fileNameTest)){
+download.file(fileUrlTest, fileNameTest, mode = "wb")    
+}
+```
+
+## Introduction
+
+Often people quantify how much of a particular activity they do, but they rarely quantify *how well they do it*. The goal of this project is to predict the manner participants did the exercise using data from accelometers on the belt, forearm, arm and dumbell of 6 participants.
+
+## Overview of the data
+
+The data used for prediction is available from the website here: [ http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har]( http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har ). For this study, the data was downloaded on 28 May 2020.
+
+The measured workout was performed by six male participants who  were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:
+
+1. exactly according to the specification (Class A)
+2. throwing the elbows to the front (Class B)
+3. lifting the dumbbell only halfway (Class C)
+4. lowering the dumbbell only halfway (Class D)
+5. throwing the hips to the front (Class E).
+
+The data consists of 19,622 observations in 160 variables. There are total 158 features, as variable 'classe' is the manner of exercise to predicted and 'X' is an index column. 
+
+
+## Exploratory analysis and data transformations
+
+We will first have a look on the data and variable data types.
+
+```{r}
+trainData = read.csv(fileNameTrain)
+testData = read.csv(fileNameTest)
+glimpse(trainData)
+
+```
+
+The first 7 columns are more related to test setting and will not be relevant for out of sample prediction and can be removed.
+
+```{r}
+train = trainData[,8:length(trainData)]
+
+```
+
+We can also see that many columns seem to have a lot of missing values. We will check if some variables have essentially zero variance, and remove them, as well as columns with more than 95 % of missing values.
+
+```{r}
+nzv = nearZeroVar(train)
+train = train[,-nzv]
+nas = apply(train,2, function(x) mean(is.na(x))) > .95
+train = train[, -which(nas, nas==FALSE)]
+```
+
+After these operations there are totally 52 features left in the processed training set and we can plot the histograms of the features. The training data set will be further splitted to training set and cross validation set with 70/30 split.
+
+```{r}
+inTrain = createDataPartition(train$classe, p=0.7, list=FALSE)
+training = train[inTrain,]
+cv = train[-inTrain,]
+
+plot_variables <- training[,-53] %>%
+        gather(x, freq)
+ggplot(plot_variables, aes(x = freq)) +
+        facet_wrap(~x, scales="free_x") +
+        geom_histogram()
+
+```
+
+## Training the model
+
+We will first use the random forest method to model the training set and predict the exercise manner for crossvalidation set and create confusion matrix.
+
+```{r}
+set.seed(1984)
+control <- trainControl(method = "cv", number = 3, verboseIter=FALSE)
+modelRF <- train(classe ~ ., data = training, method = "rf", trControl = control)
+modelRF$finalModel
+predictRF <- predict(modelRF, cv)
+confMatRF <- confusionMatrix(predictRF, cv$classe)
+confMatRF
+```
+
+The fitted model seems to predict the 'classe' variable in the cross validation set well, with accuracy of 99.2% and kappa 99.0%. As the random forest method seems to work so well, there is no need to fit further models and we can use it to predict the values for the test set.
+
+## Prediction
+
+Finally we will use the model to predict the values for the test set (20 observations).
+
+```{r, eval=FALSE}
+cols <- colnames(train[,-53])
+test <- testData %>% select(cols)
+predictTest <- predict(modFitRF, test)
+```
+
+The results are not included in this report as per the Coursera Honor Code.
+
+
+
